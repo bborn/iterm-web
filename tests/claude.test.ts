@@ -1,0 +1,65 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { foregroundClaude } from "../server/claude-session";
+import { transcriptMessages } from "../server/claude-view";
+
+const sid="session-one";
+const entry=(uuid:string,parentUuid:string|null,type:string,content:unknown,extra={})=>JSON.stringify({uuid,parentUuid,type,sessionId:sid,message:{content},...extra});
+test("matches the foreground Claude group leader on the exact terminal",()=>{
+  const ps=`1 0 ttys001 30 1 Wed Sep 16 01:02:03 2026 -zsh
+30 1 ttys001 30 30 Wed Sep 16 01:02:04 2026 /usr/bin/claude
+31 30 ttys001 30 30 Wed Sep 16 01:02:04 2026 claude
+40 1 ttys002 40 40 Wed Sep 16 01:02:04 2026 claude`;
+  assert.equal(foregroundClaude(ps,"/dev/ttys001")?.pid,30);
+  assert.equal(foregroundClaude(ps,"/dev/ttys002")?.pid,40);
+  assert.equal(foregroundClaude(ps,"/dev/ttys003"),null);
+  assert.equal(foregroundClaude(ps.replaceAll("ttys001 30","ttys001 1"),"/dev/ttys001"),null);
+});
+test("transcripts retain message roles, Markdown and tool outcomes without treating tool results as user turns",()=>{
+  const text=[entry("a",null,"user","Help me"),entry("b","a","assistant",[{type:"thinking",thinking:"private"},{type:"text",text:"## Result\n**Works**"},{type:"tool_use",id:"tool",name:"Read",input:{file_path:"a.ts"}}]),entry("c","b","user",[{type:"tool_result",tool_use_id:"tool",content:"file body",is_error:false}]),entry("d","c","assistant",[{type:"text",text:"Done."}])].join("\n");
+  const rows=transcriptMessages(text,sid);
+  assert.deepEqual(rows.map(m=>m.role),["user","assistant","tool","assistant"]);
+  assert.equal(rows[1].text,"## Result\n**Works**");
+  assert.equal(rows[2].result,"file body");assert.equal(rows[2].status,"completed");
+  assert.ok(!JSON.stringify(rows).includes("private"));
+});
+test("excludes unrelated sessions, sidechains and rewound branches; tolerates partial writes",()=>{
+  const lines=["{partial",entry("a",null,"user","question"),entry("old","a","assistant","obsolete"),entry("new","a","assistant","current"),entry("wrong","new","assistant","other session",{sessionId:"other"}),entry("side","new","assistant","subagent",{isSidechain:true}),'{"unfinished":'];
+  assert.deepEqual(transcriptMessages(lines.join("\n"),sid).map(m=>m.text),["question","current"]);
+});
+test("live permission prompts become tappable options",async()=>{
+  const {liveClaudePrompt}=await import("../server/claude-view");
+  const prompt=liveClaudePrompt("Do you want to proceed?\n❯ 1. Yes\n  2. No")!;
+  assert.equal(prompt.question,"Do you want to proceed?");
+  assert.deepEqual(prompt.options,[{key:"1",label:"Yes",selected:true},{key:"2",label:"No",selected:false}]);
+  assert.equal(liveClaudePrompt("The docs ask: Do you want to proceed?"),undefined);
+});
+test("boxed prompts with wrapped options parse cleanly",async()=>{
+  const {liveClaudePrompt}=await import("../server/claude-view");
+  const screen=["⏺ Bash(rm -rf build)","","╭──────────────────────────╮","│ Bash command             │","│                          │","│   rm -rf build           │","│                          │","│ Do you want to proceed?  │","│ ❯ 1. Yes                 │","│   2. Yes, and don't ask  │","│      again for rm        │","│   3. No (esc)            │","╰──────────────────────────╯"].join("\n");
+  const prompt=liveClaudePrompt(screen)!;
+  assert.equal(prompt.question,"Do you want to proceed?");
+  assert.deepEqual(prompt.options.map(o=>[o.label,o.detail]),[["Yes",undefined],["Yes, and don't ask","again for rm"],["No (esc)",undefined]]);
+  assert.match(prompt.text,/rm -rf build/);
+});
+test("numbered lists in Claude's output are not mistaken for a menu",async()=>{
+  const {liveClaudePrompt}=await import("../server/claude-view");
+  assert.equal(liveClaudePrompt("Here's the plan:\n1. Add tests\n2. Fix bug\n\n> "),undefined);
+  assert.equal(liveClaudePrompt("Pick one\n❯ 1. A\n  2. B\n"+"\n".repeat(3)+"output\n".repeat(20)),undefined);
+});
+test("detects a running Claude turn from its spinner line",async()=>{
+  const {claudeWorking}=await import("../server/claude-view");
+  assert.equal(claudeWorking("⏺ Reading\n\n✻ Thinking… (12s · esc to interrupt)\n> "),true);
+  assert.equal(claudeWorking("Done.\n> "),false);
+});
+test("AskUserQuestion menus with descriptions and a separated trailing option",async()=>{
+  const {liveClaudePrompt}=await import("../server/claude-view");
+  const screen=["⏺ Both fixes are ready.","","─".repeat(60),"←  ☐ Database  ☐ Deploy  ✔ Submit  →","","│ Which database should the new service use?","│ • The rest of the app runs on Postgres.","","❯ 1. Postgres","     Same as everything else.","  2. SQLite","     Simpler to run locally.","  3. Skip","     Leave it for now.","  4. Type something.","─".repeat(60),"  5. Chat about this","","Enter to select · Tab/Arrow keys to navigate · Esc to cancel",""].join("\n");
+  const prompt=liveClaudePrompt(screen)!;
+  assert.deepEqual(prompt.options.map(o=>o.key),["1","2","3","4","5"]);
+  assert.equal(prompt.options[0].label,"Postgres");
+  assert.equal(prompt.options[0].detail,"Same as everything else.");
+  assert.equal(prompt.options[4].label,"Chat about this");
+  assert.equal(prompt.question,"Which database should the new service use?\n• The rest of the app runs on Postgres.");
+  assert.match(prompt.text,/☐ Database/);
+});
