@@ -63,3 +63,17 @@ test("AskUserQuestion menus with descriptions and a separated trailing option",a
   assert.equal(prompt.question,"Which database should the new service use?\n• The rest of the app runs on Postgres.");
   assert.match(prompt.text,/☐ Database/);
 });
+test("reads Claude's permission mode from its status line",async()=>{
+  const {claudeMode}=await import("../server/claude-view");
+  assert.equal(claudeMode("> \n  ⏸ plan mode on (shift+tab to cycle)"),"plan mode");
+  assert.equal(claudeMode("> \n  ⏵⏵ accept edits on (shift+tab to cycle)"),"accept edits");
+  assert.equal(claudeMode("> \n  ⏵⏵ bypass permissions on (shift+tab to cycle)"),"bypass permissions");
+  assert.equal(claudeMode("> \n  ? for shortcuts"),"default");
+  assert.equal(claudeMode("just some output"),undefined);
+});
+test("notices select menus that need arrow keys",async()=>{
+  const {claudeMenu}=await import("../server/claude-view");
+  assert.equal(claudeMenu(" Select model\n ❯ Opus\n   Sonnet\n\n Enter to confirm · Esc to exit"),true);
+  assert.equal(claudeMenu("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"),true);
+  assert.equal(claudeMenu("> \n  ? for shortcuts"),false);
+});

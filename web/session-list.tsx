@@ -6,18 +6,31 @@ import { PlusIcon } from "./icons";
 export const tabLabel=(s:Session)=>(s.tabName || s.name || "Untitled tab").replace(/^[✳✻✶✢·*]\s*/,"");
 
 // Readable text on an iTerm tab-group color.
-function ink(color:string) {
+export function ink(color:string) {
   const rgb=color.startsWith("#")?[1,3,5].map(i=>parseInt(color.slice(i,i+2),16)/255):(color.match(/[01]\.\d+/g)||[]).map(Number);
   const linear=rgb.map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);
   return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722>.179?"#111111":"#ffffff";
 }
 
-function subtitle(s:Session,panes:number) {
+export function subtitle(s:Session,panes:number) {
   if(panes>1)return `Pane ${s.paneIndex} · ${s.name}`;
   const cwd=s.cwd.replace(/^\/Users\/[^/]+/,"~");
   if(s.claude)return cwd;
   return [s.atPrompt?"At prompt":s.processing?"Running":"",cwd].filter(Boolean).join(" · ");
 }
+
+export type Section={key:string;windowId:number;group:Session["group"];sessions:Session[]};
+// Preserve iTerm's window → group → tab → pane order.
+export function groupSections(sessions:Session[]):Section[] {
+  const sections:Section[]=[];
+  for(const s of sessions){
+    const key=`${s.windowId}:${s.group?.id || "ungrouped"}`;
+    if(sections.at(-1)?.key!==key)sections.push({key,windowId:s.windowId,group:s.group,sessions:[]});
+    sections.at(-1)!.sessions.push(s);
+  }
+  return sections;
+}
+export const matches=(s:Session,q:string)=>!q || [s.group?.name,s.tabName,s.name,s.cwd,s.profile].join(" ").toLowerCase().includes(q);
 
 export function SessionList({host,data,error,refresh,open}:{host:string;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
   const [query,setQuery]=useState("");
@@ -28,14 +41,8 @@ export function SessionList({host,data,error,refresh,open}:{host:string;data:Lis
   const [actionError,setActionError]=useState("");
 
   const q=query.trim().toLowerCase();
-  const sessions=(data?.sessions || []).filter(s=>!q || [s.group?.name,s.tabName,s.name,s.cwd,s.profile].join(" ").toLowerCase().includes(q));
-  // Preserve iTerm's window → group → tab → pane order.
-  const sections:{key:string;windowId:number;group:Session["group"];sessions:Session[]}[]=[];
-  for(const s of sessions){
-    const key=`${s.windowId}:${s.group?.id || "ungrouped"}`;
-    if(sections.at(-1)?.key!==key)sections.push({key,windowId:s.windowId,group:s.group,sessions:[]});
-    sections.at(-1)!.sessions.push(s);
-  }
+  const sessions=(data?.sessions || []).filter(s=>matches(s,q));
+  const sections=groupSections(sessions);
   const windows=new Set(data?.sessions.map(s=>s.windowId)).size;
   const current=data?.sessions.find(s=>s.selected) || data?.sessions[0];
 

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { ClaudeView } from "./contract";
 import { processClaudeConfigDir } from "./claude-config";
-import { transcriptMessages, liveClaudePrompt, claudeWorking } from "./claude-view";
+import { transcriptMessages, liveClaudePrompt, claudeWorking, claudeMode, claudeMenu } from "./claude-view";
 
 const registrySchema=z.object({pid:z.number().int().positive(),sessionId:z.string().uuid(),cwd:z.string().startsWith("/").max(4096),procStart:z.string()});
 export interface Process {pid:number;tty:string;foreground:number;group:number;started:string;command:string}
@@ -64,7 +64,7 @@ export async function readClaudeTranscript(process:Process,root:string,signal:Ab
     if(parsed.size>32)parsed.delete(parsed.keys().next().value!);
   }
   if(!messages.length)return null;
-  return {source:"transcript",identity:metadata.sessionId,messages,working:false,notice:data.partial || messages.length>=120?"Showing recent conversation history.":undefined};
+  return {source:"transcript",identity:metadata.sessionId,messages,working:false,menu:false,notice:data.partial || messages.length>=120?"Showing recent conversation history.":undefined};
 }
 const psFields="pid=,ppid=,tty=,tpgid=,pgid=,lstart=,comm=";
 // Listing every process on macOS takes ~0.5s; restricting ps to the terminals we
@@ -89,10 +89,10 @@ export async function claudeSession(tty:string,text:string,signal:AbortSignal):P
   try {process=foregroundClaude(await psForTtys([tty],signal),tty);}
   catch {return null;}
   if(!process){transcripts.delete(tty);return null;}
-  const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",prompt:liveClaudePrompt(text),working:claudeWorking(text)};
+  const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)};
   try {
     const root=await claudeConfigForProcess(process,signal);
     const view=await readClaudeTranscript(process,root,signal,path=>transcripts.set(tty,path));
-    return view?{...view,prompt:liveClaudePrompt(text),working:claudeWorking(text)}:fallback;
+    return view?{...view,prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)}:fallback;
   } catch {return fallback;}
 }

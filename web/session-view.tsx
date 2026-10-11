@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, errorMessage, useLiveSession, useStoredState, type Action, type Session, type Upload } from "./api";
+import { api, errorMessage, useLiveSession, useStoredState, type Session, type Upload } from "./api";
 import { Chat, PromptCard } from "./chat";
 import { Composer } from "./composer";
 import { Sheet, type SheetAction } from "./sheet";
 import { tabLabel } from "./session-list";
 import { BackIcon, MoreIcon } from "./icons";
+import { ChatKeys, TerminalKeys, type Key } from "./keys";
+import { TabDrawer } from "./tab-drawer";
 
-type Key = Extract<Action,{kind:"key"}>["key"];
-const KEYS:[Key,string][]=[["escape","esc"],["shift-tab","⇧tab"],["up","↑"],["down","↓"],["enter","⏎"],["tab","tab"],["ctrl-c","^C"],["left","←"],["right","→"],["ctrl-d","^D"]];
+// Horizontal swipes start a drawer drag, except on things that scroll sideways or take text.
+const NO_SWIPE=".keys, pre, table, textarea, input, .sheet, .prompt-details";
 
-export function SessionView({sessionId,session,gone,back,open,refreshList}:{sessionId:string;session?:Session;sessions:Session[];gone:boolean;back:()=>void;open:(id:string)=>void;refreshList:()=>void}) {
+export function SessionView({sessionId,session,sessions,gone,back,open,refreshList}:{sessionId:string;session?:Session;sessions:Session[];gone:boolean;back:()=>void;open:(id:string)=>void;refreshList:()=>void}) {
   const {preview,error,connected}=useLiveSession(sessionId);
   const [mode,setMode]=useState<"chat"|"terminal">("chat");
   const [showKeys,setShowKeys]=useStoredState("show-keys",true);
@@ -25,7 +27,12 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
   const scroller=useRef<HTMLDivElement>(null);
   const atBottom=useRef(true);
   const [behind,setBehind]=useState(false);
-  const swipe=useRef<{x:number;y:number}|null>(null);
+  const [chatKeysExpanded,setChatKeysExpanded]=useStoredState("chat-keys-expanded",false);
+  // Tab drawer: open state, plus the live finger position while dragging it.
+  const [drawerOpen,setDrawerOpen]=useState(false);
+  const [drawerX,setDrawerX]=useState<number|null>(null);
+  const drawerWidth=Math.min(window.innerWidth*.86,380);
+  const drag=useRef<{x:number;y:number;t:number;base:number;decided:boolean;active:boolean}|null>(null);
 
   const claude=preview?.claude;
   const chat=mode==="chat" && claude?.source==="transcript";
@@ -63,6 +70,7 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
   }
   const key=(k:Key)=>void run({kind:"key",key:k});
 
+  const claudeKeysMenu=!!claude && mode==="chat";
   const menuActions:SheetAction[]=[
     {label:"Show on Mac",onSelect:()=>void run({kind:"focus"})},
     {label:"Rename tab",onSelect:()=>{const name=window.prompt("Tab name",session?tabLabel(session):"");if(name?.trim())void run({kind:"rename",name:name.trim()},()=>refreshList());}},
@@ -74,7 +82,7 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
       {label:"Larger text",onSelect:()=>setFontSize(Math.min(18,fontSize+1))},
       {label:"Smaller text",onSelect:()=>setFontSize(Math.max(8,fontSize-1))},
     ]:[]),
-    {label:showKeys?"Hide key bar":"Show key bar",onSelect:()=>setShowKeys(!showKeys)},
+    ...(!claudeKeysMenu?[{label:showKeys?"Hide key bar":"Show key bar",onSelect:()=>setShowKeys(!showKeys)}]:[]),
     {label:"Close pane",destructive:true,onSelect:()=>{if(window.confirm("Close this pane? Running programs may stop."))void run({kind:"close",confirmed:true},()=>{refreshList();back();});}},
     {label:"Close tab",destructive:true,onSelect:()=>{if(window.confirm("Close this tab and all its panes? Running programs may stop."))void run({kind:"close-tab",confirmed:true},()=>{refreshList();back();});}},
   ];
@@ -85,12 +93,37 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
     :working?"Claude is working…"
     :session?.cwd.replace(/^\/Users\/[^/]+/,"~") || "";
 
+  const claudeKeys=!!claude && mode==="chat";
   return <div className="screen session"
-    onTouchStart={e=>{const t=e.touches[0];swipe.current=t.clientX<=24?{x:t.clientX,y:t.clientY}:null;}}
-    onTouchEnd={e=>{const s=swipe.current;swipe.current=null;const t=e.changedTouches[0];if(s && t.clientX-s.x>80 && Math.abs(t.clientY-s.y)<60)back();}}>
+    onTouchStart={e=>{
+      const t=e.touches[0];
+      drag.current=e.touches.length===1 && !(e.target as Element).closest(NO_SWIPE)
+        ?{x:t.clientX,y:t.clientY,t:Date.now(),base:drawerOpen?drawerWidth:0,decided:false,active:false}:null;
+    }}
+    onTouchMove={e=>{
+      const d=drag.current;if(!d)return;
+      const t=e.touches[0];const dx=t.clientX-d.x,dy=t.clientY-d.y;
+      if(!d.decided){
+        if(Math.abs(dx)<10 && Math.abs(dy)<10)return;
+        d.decided=true;
+        // Right opens, left closes; anything mostly vertical is a scroll.
+        d.active=Math.abs(dx)>Math.abs(dy)*1.3 && (drawerOpen?dx<0:dx>0);
+      }
+      if(d.active)setDrawerX(Math.max(0,Math.min(drawerWidth,d.base+dx)));
+    }}
+    onTouchEnd={e=>{
+      const d=drag.current;drag.current=null;
+      if(!d?.active)return;
+      const dx=e.changedTouches[0].clientX-d.x;
+      const flick=Math.abs(dx)>40 && Date.now()-d.t<250;
+      const x=d.base+dx;
+      setDrawerOpen(flick?dx>0:x>drawerWidth*.4);
+      setDrawerX(null);
+    }}
+    onTouchCancel={()=>{drag.current=null;setDrawerX(null);}}>
     <header className="topbar">
       <button type="button" className="icon-button back" aria-label="All tabs" onClick={back}><BackIcon /></button>
-      <div className="topbar-center">
+      <div className="topbar-center" role="button" tabIndex={0} aria-label="Show tabs" onClick={()=>setDrawerOpen(true)} onKeyDown={e=>{if(e.key==="Enter")setDrawerOpen(true);}}>
         <p className="topbar-name">{session?tabLabel(session):"Session"}</p>
         <p className="topbar-status" data-state={prompt?"prompt":working?"working":connected?"ok":"offline"}>{status}</p>
       </div>
@@ -111,7 +144,9 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
     <div className="dock">
       {working && <div className="working"><span className="spinner" aria-hidden="true" />Claude is working<button type="button" className="stop" disabled={busy} onClick={()=>key("escape")}>Stop</button></div>}
       {prompt && <PromptCard key={prompt.text} prompt={prompt} disabled={busy} choose={k=>{setAnswered(prompt.text);key(k as Key);}} />}
-      {showKeys && <div className="keys" aria-label="Keys">{KEYS.map(([k,label])=><button key={k} type="button" className="key" disabled={busy} onMouseDown={e=>e.preventDefault()} onClick={()=>key(k)}>{label}</button>)}</div>}
+      {claudeKeys
+        ?<ChatKeys mode={claude?.mode} menu={!!claude?.menu && !prompt} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
+        :showKeys && <TerminalKeys busy={busy} send={key} />}
       <Composer sessionId={sessionId} mode={chat || (claude && mode==="chat")?"claude":"terminal"} disabled={gone}
         sendClaude={async(text:string,files:Upload[])=>{
           const item={id:crypto.randomUUID(),text:[text,...files.map(f=>`📎 ${f.name}`)].filter(Boolean).join("\n"),match:text.trim() || "Attached file:",at:Date.now()};
@@ -121,6 +156,8 @@ export function SessionView({sessionId,session,gone,back,open,refreshList}:{sess
         }}
         sendText={async text=>{await api.action(sessionId,{kind:"send",text,enter:true});atBottom.current=true;}} />
     </div>
+    <TabDrawer sessions={sessions} currentId={sessionId} open={drawerOpen} offset={drawerX} width={drawerWidth}
+      select={id=>{setDrawerOpen(false);open(id);}} close={()=>setDrawerOpen(false)} />
     <Sheet open={menu} onClose={()=>setMenu(false)} title={session?tabLabel(session):undefined} actions={menuActions} />
   </div>;
 }

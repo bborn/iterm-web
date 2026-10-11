@@ -1,5 +1,5 @@
 import type { Action, ChatMessage, ClaudeSend, InputOptions, Preview, Session, SessionList } from "./contract";
-import { liveClaudePrompt, claudeWorking } from "./claude-view";
+import { liveClaudePrompt, claudeWorking, claudeMode, claudeMenu } from "./claude-view";
 
 // A stand-in for iTerm2 so the UI can be developed and demoed on any machine
 // (`iterm-web start --demo`). Nothing here touches a real terminal.
@@ -29,7 +29,11 @@ const tabs:FakeTab[]=[
 let working=new Set(["claude-blog"]);
 
 const find=(id:string)=>{const tab=tabs.find(t=>t.session.id===id);if(!tab)throw Error("Session no longer exists. Refresh the session list.");return tab;};
-const screenFor=(tab:FakeTab)=>tab.screen+(working.has(tab.session.id)?"\n\n✻ Thinking… (12s · ↑ 1.2k tokens · esc to interrupt)":"\n\n> ");
+// Claude's permission modes, cycled by shift+tab like the real thing.
+const MODES=["default","accept edits","plan mode"];
+const modes=new Map<string,number>([["claude-blog",1]]);
+const modeLine=(id:string)=>{const m=MODES[modes.get(id) ?? 0];return m==="default"?"  ? for shortcuts":`  ${m==="plan mode"?"⏸":"⏵⏵"} ${m} on (shift+tab to cycle)`;};
+const screenFor=(tab:FakeTab)=>tab.screen+(working.has(tab.session.id)?"\n\n✻ Thinking… (12s · ↑ 1.2k tokens · esc to interrupt)":"")+(tab.chat && !tab.screen.includes("Do you want")?`\n\n> \n${modeLine(tab.session.id)}`:tab.chat?"":"\n\n> ");
 
 export const fake={
   hostName:()=>"Sam's MacBook",
@@ -37,7 +41,7 @@ export const fake={
   async preview(id:string):Promise<Preview> {
     const tab=find(id);const text=screenFor(tab);
     if(!tab.chat)return {text,truncated:false,claude:null};
-    return {text,truncated:false,claude:{source:"transcript",identity:id,messages:tab.chat,prompt:liveClaudePrompt(text),working:claudeWorking(text)}};
+    return {text,truncated:false,claude:{source:"transcript",identity:id,messages:tab.chat,prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)}};
   },
   async inputOptions():Promise<InputOptions> {
     return {truncated:false,skills:[
@@ -55,6 +59,7 @@ export const fake={
       const pending=tab.chat?.find(m=>m.status==="pending");if(pending){pending.status="completed";pending.result="== 20261001 FixCartRounding: migrated";}
     }
     if(action.kind==="key" && (action.key==="escape" || action.key==="ctrl-c"))working.delete(tab.session.id);
+    if(action.kind==="key" && action.key==="shift-tab")modes.set(tab.session.id,((modes.get(tab.session.id) ?? 0)+1)%MODES.length);
     if(action.kind==="send")tab.screen+=action.text+(action.enter?"\n":"");
     return {sessionId:tab.session.id};
   },

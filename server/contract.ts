@@ -36,6 +36,10 @@ export type Prompt = z.infer<typeof promptSchema>;
 export const claudeViewSchema = z.object({
   source:z.enum(["transcript","screen"]), identity:z.string(), messages:z.array(chatMessageSchema), notice:z.string().optional(),
   prompt:promptSchema.optional(), working:z.boolean().default(false),
+  // Claude's permission mode from its status line ("plan mode", "accept edits"…); "default" when none is shown.
+  mode:z.string().optional(),
+  // A select menu is on screen that couldn't be turned into buttons (needs arrows + Enter).
+  menu:z.boolean().default(false),
 });
 export type ClaudeView = z.infer<typeof claudeViewSchema>;
 export const previewSchema = z.object({text:z.string(),truncated:z.boolean(),claude:claudeViewSchema.nullable().default(null)});

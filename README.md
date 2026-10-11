@@ -18,7 +18,8 @@ iterm-web reads the conversation from Claude Code's own transcript and shows it 
 - **Claude as a chat.** Rendered Markdown, compact tool calls you can tap to expand, and long runs of tool calls collapsed. It updates live as Claude works.
 - **Prompts as buttons.** Permission requests, plan approvals and questions from Claude become big tappable options, with each option's description.
 - **A composer built for phones.** It grows as you type, offers `/` suggestions from your skills and commands, attaches photos and files (Claude gets their paths on your Mac), and keeps a draft per tab.
-- **The keys you actually need.** esc, ⇧tab (Claude's mode switch), arrows, ⏎, tab, ^C and ^D. A **Stop** button appears while Claude is working.
+- **Switch tabs with a swipe.** Swipe right in any session (or tap its title) to pull in your tab list, then tap another tab to jump to it.
+- **The keys you actually need.** While chatting, a slim bar shows Claude's current mode (tap to cycle, like ⇧tab) and esc. Arrows and ⏎ appear automatically when Claude shows a menu that needs them, and "keys" reveals the rest. The terminal view has the full set: esc, ⇧tab, arrows, ⏎, tab, ^C and ^D. A **Stop** button appears while Claude is working.
 - **Any terminal, too.** For tabs not running Claude, a terminal view shows the screen, with a command box and the same keys.
 - **Fast.** One persistent connection to iTerm, and live updates pushed over a WebSocket the moment the screen or transcript changes.
 - **Installs like an app.** Add it to your home screen and it opens full screen.

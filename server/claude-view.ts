@@ -76,3 +76,20 @@ export function liveClaudePrompt(text:string):Prompt|undefined {
 export function claudeWorking(text:string):boolean {
   return text.split("\n").slice(-20).some(line=>/esc to interrupt/i.test(line));
 }
+
+// The mode Claude shows above its input, e.g. "⏸ plan mode on (shift+tab to cycle)".
+// Returns undefined when Claude's input area isn't on screen (e.g. a menu is open).
+export function claudeMode(text:string):string|undefined {
+  const lines=text.split("\n").slice(-12);
+  for(let i=lines.length-1;i>=0;i--){
+    const m=/([a-z][a-z -]*?)\s+on\b[^\n]*shift\+tab/i.exec(lines[i]);
+    if(m)return m[1].trim().toLowerCase();
+  }
+  if(lines.some(l=>/\?\s*for shortcuts|shift\+tab to cycle/i.test(l)))return "default";
+  return undefined;
+}
+
+// A select menu (Enter to select / arrows to navigate) is waiting for keys.
+export function claudeMenu(text:string):boolean {
+  return text.split("\n").slice(-8).some(l=>/enter to (select|confirm)|↑\/↓|arrow keys to navigate|esc to (cancel|go back)/i.test(l));
+}
