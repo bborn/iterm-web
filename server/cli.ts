@@ -41,6 +41,8 @@ function parse(argv:string[]):{command:string;flags:Flags} {
 
 const mark=(ok:boolean,fatal?:boolean)=>ok?"\x1b[32m✓\x1b[0m":fatal?"\x1b[31m✗\x1b[0m":"\x1b[33m!\x1b[0m";
 const say=(s="")=>process.stdout.write(s+"\n");
+// `iterm-web status | head` closes the pipe early; that's not an error.
+process.stdout.on("error",error=>{if((error as NodeJS.ErrnoException).code==="EPIPE")process.exit(0);throw error;});
 
 // Ask the running server for a one-time code and show it with a QR link.
 async function pair(config:Config) {
