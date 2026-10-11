@@ -66,7 +66,7 @@ async function fetchGroups(signal: AbortSignal): Promise<Map<string,TabGroup>> {
   return new Promise((resolve,reject)=>{
     const socket=new WebSocket("ws://localhost/",["api.iterm2.com"],{
       createConnection:()=>connect({path:join(homedir(),"Library/Application Support/iTerm2/private/socket")}),
-      headers:{origin:"ws://localhost/","x-iterm2-cookie":credentials.cookie,"x-iterm2-key":credentials.key,"x-iterm2-advisory-name":"iterm-web","x-iterm2-library-version":"iterm-web 0.1.0","x-iterm2-disable-auth-ui":"true"},
+      headers:{origin:"ws://localhost/","x-iterm2-cookie":credentials.cookie,"x-iterm2-key":credentials.key,"x-iterm2-advisory-name":"iterm-web","x-iterm2-library-version":"iterm-web 0.1.1","x-iterm2-disable-auth-ui":"true"},
       handshakeTimeout:5000,maxPayload:4*1024*1024,
     });
     let finished=false;

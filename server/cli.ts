@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { newKey, parseLogins } from "./auth";
 import { allowedHosts, CONFIG_FILE, LOG_FILE, loadConfig, saveConfig, type Config } from "./config";
 
-const VERSION="0.1.0";
+const VERSION="0.1.1";
 const HELP=`iterm-web ${VERSION}: your iTerm2 tabs and Claude Code sessions, on your phone.
 
 Usage:
